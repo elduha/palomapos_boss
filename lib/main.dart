@@ -16,49 +16,25 @@ class MyApp extends StatelessWidget {
         primaryColor: Colors.blue,
         fontFamily: 'Roboto',
       ),
-      home: MyWebView(),
+      home: LoginScreen(),
     );
   }
 }
 
-class MyWebView extends StatefulWidget {
+class LoginScreen extends StatefulWidget {
   @override
-  _MyWebViewState createState() => _MyWebViewState();
+  _LoginScreenState createState() => _LoginScreenState();
 }
 
-class _MyWebViewState extends State<MyWebView> {
+class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController loginController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-  final webViewController = Completer<WebViewController>();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSavedCredentials();
-  }
-
-  _loadSavedCredentials() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String savedLogin = prefs.getString('login') ?? '';
-    String savedPassword = prefs.getString('password') ?? '';
-
-    setState(() {
-      loginController.text = savedLogin;
-      passwordController.text = savedPassword;
-    });
-  }
-
-  _saveCredentials() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    prefs.setString('login', loginController.text);
-    prefs.setString('password', passwordController.text);
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Webview Example'),
+        title: Text('Login'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -87,10 +63,15 @@ class _MyWebViewState extends State<MyWebView> {
             SizedBox(height: 16.0),
             ElevatedButton(
               onPressed: () {
-                _login(context);
-                print(loginController);
+                _saveCredentials();
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => WebViewScreen(),
+                  ),
+                );
               },
-              child: Text('Войти' , style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),),
+              child: Text('Войти', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               style: ElevatedButton.styleFrom(
                 primary: Colors.blue,
               ),
@@ -101,43 +82,54 @@ class _MyWebViewState extends State<MyWebView> {
     );
   }
 
-  _login(BuildContext context) async {
-    final webViewController = await this.webViewController.future;
-
-    webViewController.evaluateJavascript(
-        'document.getElementsByName("login")[0].value="${loginController.text}";');
-    webViewController.evaluateJavascript(
-        'document.getElementsByName("password")[0].value="${passwordController.text}";');
-    webViewController.evaluateJavascript(
-        'document.getElementsByClassName("btn-form")[0].click();');
-    _saveCredentials();
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ResultScreen(webViewController: webViewController),
-      ),
-    );
+  _saveCredentials() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    prefs.setString('login', loginController.text);
+    prefs.setString('password', passwordController.text);
   }
 }
 
-class ResultScreen extends StatelessWidget {
-  late final WebViewController webViewController;
+class WebViewScreen extends StatefulWidget {
+  @override
+  _WebViewScreenState createState() => _WebViewScreenState();
+}
 
-  ResultScreen({required this.webViewController});
+class _WebViewScreenState extends State<WebViewScreen> {
+  final Completer<WebViewController> _controller = Completer<WebViewController>();
+  final Completer<WebViewController> _autoFillController = Completer<WebViewController>();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Результат входа'),
+        title: Text('WebView'),
       ),
       body: WebView(
-        onWebViewCreated: (controller) {
-          webViewController = controller;
-        },
         initialUrl: 'https://mobile.paloma365.com/login.php',
+        javascriptMode: JavascriptMode.unrestricted,
+        onWebViewCreated: (WebViewController webViewController) {
+          _controller.complete(webViewController);
+          _autoFillController.complete(webViewController);
+        },
+        onPageFinished: (String url) {
+          _autoFillCredentials(context);
+        },
       ),
     );
+  }
+
+  _autoFillCredentials(BuildContext context) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String savedLogin = prefs.getString('login') ?? '';
+    String savedPassword = prefs.getString('password') ?? '';
+
+    String autoFillScript = '''
+      document.getElementsByName("login")[0].value="$savedLogin";
+      document.getElementsByName("password")[0].value="$savedPassword";
+      document.getElementsByClassName("btn-form")[0].click();
+    ''';
+
+    final WebViewController controller = await _autoFillController.future;
+    controller.evaluateJavascript(autoFillScript);
   }
 }
